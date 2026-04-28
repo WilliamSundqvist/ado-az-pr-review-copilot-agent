@@ -5,13 +5,13 @@ description: Team coding standards consulted by the PR Review agent. Auto-applie
 
 # Code Review Standards
 
-> The scaffolding prompt seeds this file from a quick scan of your codebase. Edit freely. Delete what doesn't apply. Add what matters. The PR Review agent reads every file in `.github/instructions/` automatically — to add more standards, drop another `.instructions.md` file in this folder.
+> The scaffolding prompt seeds this file from a quick scan of your codebase. Edit freely. Delete what doesn't apply. Add what matters. The PR Review agent reads every file in `.github/instructions/` automatically  to add more standards, drop another `.instructions.md` file in this folder.
 
 ## General
 
 - Prefer readable code over clever code. If a junior engineer can't follow it in 30 seconds, add a comment or refactor.
 - Every change should be the smallest one that solves the problem. PRs that touch unrelated areas should be split.
-- Tests are part of the change. A bug fix without a regression test is incomplete unless the test would be impractical (UI flakiness, hardware dependency, etc.) — in which case say so in the PR description.
+- Tests are part of the change. A bug fix without a regression test is incomplete unless the test would be impractical (UI flakiness, hardware dependency, etc.)  in which case say so in the PR description.
 
 ## Naming
 

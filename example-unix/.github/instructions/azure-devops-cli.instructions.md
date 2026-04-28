@@ -3,22 +3,22 @@ applyTo: '**'
 description: Azure DevOps CLI runbook for bash (macOS / Linux). Auto-applied to every chat in this workspace.
 ---
 
-# Azure DevOps CLI Runbook — bash
+# Azure DevOps CLI Runbook  bash
 
-Recipes for everything the PR Review and PR Fix agents need to do, calibrated for bash on macOS or Linux. This file complements the agents — they reference these patterns rather than re-deriving CLI syntax.
+Recipes for everything the PR Review and PR Fix agents need to do, calibrated for bash on macOS or Linux. This file complements the agents  they reference these patterns rather than re-deriving CLI syntax.
 
 ## Configuration
 
 Replace these placeholders with your team's values (the scaffolding prompt does this for you):
 
-- `__ORG_URL__` → e.g. `https://dev.azure.com/contoso/` or `https://contoso.visualstudio.com/`
-- `__ADO_PROJECT__` → e.g. `MyProject`
-- `__ADO_REPO__` → e.g. `my-repo`
+- `__ORG_URL__`  e.g. `https://dev.azure.com/contoso/` or `https://contoso.visualstudio.com/`
+- `__ADO_PROJECT__`  e.g. `MyProject`
+- `__ADO_REPO__`  e.g. `my-repo`
 
 ## Prerequisites
 
 - `az` CLI with the `azure-devops` extension
-- `jq` — used for JSON shaping. Install with `brew install jq` (macOS) or your package manager (Linux).
+- `jq`  used for JSON shaping. Install with `brew install jq` (macOS) or your package manager (Linux).
 - `git`
 
 ## One-time setup
@@ -33,7 +33,7 @@ az extension add --name azure-devops
 ```bash
 az --version | head -1
 az account show --query user.name -o tsv          # fails if not logged in
-az extension list --query "[?name=='azure-devops'].name" -o tsv   # empty if extension missing
+az extension list --query "['name=='azure-devops'].name" -o tsv   # empty if extension missing
 command -v jq >/dev/null || echo "jq is not installed; install before proceeding"
 ```
 
@@ -94,7 +94,7 @@ git fetch origin "$SOURCE" "$TARGET" --quiet
 git diff "$TGT_SHA...$SRC_SHA"
 ```
 
-The three-dot syntax shows changes on the source branch since it diverged from target — exactly what reviewers need. **Do not use the `git/diffs` REST endpoint;** it's slower, has a smaller output limit, and offers nothing local git doesn't.
+The three-dot syntax shows changes on the source branch since it diverged from target  exactly what reviewers need. **Do not use the `git/diffs` REST endpoint;** it's slower, has a smaller output limit, and offers nothing local git doesn't.
 
 ---
 
@@ -129,7 +129,7 @@ az devops invoke \
     } ]'
 ```
 
-> Use `--api-version "7.1"` (quoted, no `-preview.1` suffix) — see "When things break" below.
+> Use `--api-version "7.1"` (quoted, no `-preview.1` suffix)  see "When things break" below.
 
 ---
 
@@ -155,7 +155,7 @@ resp=$(az devops invoke \
   --api-version "7.1" \
   --output json)
 
-if [ $? -eq 0 ] && echo "$resp" | jq -e '.id' >/dev/null; then
+if [ $' -eq 0 ] && echo "$resp" | jq -e '.id' >/dev/null; then
   thread_id=$(echo "$resp" | jq -r '.id')
   echo "Posted thread $thread_id"
 else
@@ -197,7 +197,7 @@ For a multi-line range, set `rightFileEnd.line` to the last line.
 
 ### Multi-line comment bodies
 
-`jq -n --arg content "..."` handles newlines and quotes safely — pass a heredoc:
+`jq -n --arg content "..."` handles newlines and quotes safely  pass a heredoc:
 
 ```bash
 content=$(cat <<'EOF'
@@ -231,10 +231,10 @@ az repos pr set-vote --id $PR --org "__ORG_URL__" \
 
 ## Idempotency cheat sheet
 
-After a successful POST (`$? -eq 0` and the response has an `id`):
+After a successful POST (`$' -eq 0` and the response has an `id`):
 - Append to in-session `posted_findings`: `{ file, line, thread_id, content_hash }`.
 - **Do not retry**, even if the user asks. Offer the thread URL instead:
-  `__ORG_URL____ADO_PROJECT__/_git/__ADO_REPO__/pullrequest/$PR?_a=overview&discussionId=<thread_id>`
+  `__ORG_URL____ADO_PROJECT__/_git/__ADO_REPO__/pullrequest/$PR'_a=overview&discussionId=<thread_id>`
 
 After a failed POST:
 - Re-run the threads listing. If the comment is now present, mark it posted.

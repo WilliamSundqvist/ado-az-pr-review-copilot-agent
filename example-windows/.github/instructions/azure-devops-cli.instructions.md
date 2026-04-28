@@ -3,17 +3,17 @@ applyTo: '**'
 description: Azure DevOps CLI runbook for PowerShell (Windows). Auto-applied to every chat in this workspace.
 ---
 
-# Azure DevOps CLI Runbook — PowerShell
+# Azure DevOps CLI Runbook  PowerShell
 
-Recipes for everything the PR Review and PR Fix agents need to do, calibrated for PowerShell on Windows. Every recipe has been tested against the gotchas listed at the bottom — **do not deviate from the patterns shown**.
+Recipes for everything the PR Review and PR Fix agents need to do, calibrated for PowerShell on Windows. Every recipe has been tested against the gotchas listed at the bottom  **do not deviate from the patterns shown**.
 
 ## Configuration
 
 Replace these placeholders with your team's values (the scaffolding prompt does this for you):
 
-- `__ORG_URL__` → e.g. `https://dev.azure.com/contoso/` or `https://contoso.visualstudio.com/`
-- `__ADO_PROJECT__` → e.g. `MyProject`
-- `__ADO_REPO__` → e.g. `my-repo`
+- `__ORG_URL__`  e.g. `https://dev.azure.com/contoso/` or `https://contoso.visualstudio.com/`
+- `__ADO_PROJECT__`  e.g. `MyProject`
+- `__ADO_REPO__`  e.g. `my-repo`
 
 ## One-time setup
 
@@ -27,7 +27,7 @@ az extension add --name azure-devops
 ```powershell
 az --version | Select-Object -First 1
 az account show --query user.name -o tsv          # fails if not logged in
-az extension list --query "[?name=='azure-devops'].name" -o tsv   # empty if extension missing
+az extension list --query "['name=='azure-devops'].name" -o tsv   # empty if extension missing
 ```
 
 If `az.cmd` is on PATH but `az` isn't, `az` still works because PowerShell resolves `.cmd` automatically. No special handling needed.
@@ -84,7 +84,7 @@ git fetch origin $source $target --quiet
 git diff "$tgtSha...$srcSha"
 ```
 
-The three-dot syntax shows changes on the source branch since it diverged from target — exactly what reviewers need. **Do not use `--query-parameters` against the `git/diffs` REST endpoint;** it's slower, has a smaller output limit, and offers nothing local git doesn't.
+The three-dot syntax shows changes on the source branch since it diverged from target  exactly what reviewers need. **Do not use `--query-parameters` against the `git/diffs` REST endpoint;** it's slower, has a smaller output limit, and offers nothing local git doesn't.
 
 ---
 
@@ -102,7 +102,7 @@ foreach ($wid in $wiIds) {
 
 ## List existing comment threads (duplicate-prevention)
 
-**Avoid `--query` here.** PowerShell's backtick is the escape character; JMESPath's backtick literals (e.g. `` [?isDeleted==`false`] ``) get mangled before reaching `az`. Filter in PowerShell instead:
+**Avoid `--query` here.** PowerShell's backtick is the escape character; JMESPath's backtick literals (e.g. `` ['isDeleted==`false`] ``) get mangled before reaching `az`. Filter in PowerShell instead:
 
 ```powershell
 $tmpThreads = Join-Path $env:TEMP "pr-threads-$pr.json"
@@ -124,11 +124,11 @@ $threads | Select-Object id, status,
   @{n='preview';  e={ if ($_.comments[0].content) { $_.comments[0].content.Substring(0, [Math]::Min(120, $_.comments[0].content.Length)) } } }
 ```
 
-> **Why temp file then read:** piping `az devops invoke` directly into another command is unreliable in PowerShell — the CLI's output buffering can deliver an empty stream to the next process.
+> **Why temp file then read:** piping `az devops invoke` directly into another command is unreliable in PowerShell  the CLI's output buffering can deliver an empty stream to the next process.
 
 ---
 
-## Post a comment — the only correct pattern
+## Post a comment  the only correct pattern
 
 There is **one** pattern for posting comments. Multiple alternatives have been tried in the field and have failed in real-world runs. Use this pattern verbatim.
 
@@ -142,7 +142,7 @@ $tmp = Join-Path $env:TEMP "pr-comment-$pr.json"
 # - Backticks in the comment body: pass through as-is. They are valid JSON.
 # - Newlines in the comment body: use the two literal characters \ + n. ADO renders \n as a line break.
 # - Double quotes in the comment body: escape as \" inside the string.
-# - Do NOT use Unicode escapes like \u2014 — PowerShell does not expand them in single-quoted strings.
+# - Do NOT use Unicode escapes like \u2014  PowerShell does not expand them in single-quoted strings.
 
 $json = '{"comments":[{"parentCommentId":0,"content":"YOUR COMMENT TEXT HERE WITH \n FOR NEWLINES","commentType":1}],"status":1,"threadContext":{"filePath":"/src/auth/login.ts","rightFileStart":{"line":42,"offset":1},"rightFileEnd":{"line":42,"offset":1}}}'
 
@@ -190,7 +190,7 @@ These have all been tried and have all failed in real-world runs:
 
 ### A note on long bodies
 
-For long comments (more than ~500 chars), the single-line literal is harder to read in the terminal but still works. Define it on its own line with no other code on the same line — don't try to break it across multiple lines with PowerShell continuation operators (backtick or pipe).
+For long comments (more than ~500 chars), the single-line literal is harder to read in the terminal but still works. Define it on its own line with no other code on the same line  don't try to break it across multiple lines with PowerShell continuation operators (backtick or pipe).
 
 ### Use a fresh terminal before posting
 
@@ -212,7 +212,7 @@ az repos pr set-vote --id $pr --org "__ORG_URL__" --vote approve|approve-with-su
 After a successful POST (`$LASTEXITCODE -eq 0` and `$resp.id` exists):
 - Append to in-session `posted_findings`: `{ file, line, thread_id = $resp.id, content_hash }`.
 - **Do not retry**, even if the user asks. Offer the thread URL instead:
-  `__ORG_URL____ADO_PROJECT__/_git/__ADO_REPO__/pullrequest/$pr?_a=overview&discussionId=$($resp.id)`
+  `__ORG_URL____ADO_PROJECT__/_git/__ADO_REPO__/pullrequest/$pr'_a=overview&discussionId=$($resp.id)`
 
 After a failed POST:
 - Re-run the threads listing. If the comment is now present, mark it posted (capture the `id`).
@@ -249,4 +249,4 @@ $vals = az repos pr show --id $pr --org "__ORG_URL__" --query '[sourceRefName, t
 $src = $vals[0]; $tgt = $vals[1]
 ```
 
-But once a query needs `[?field == \`literal\`]` — drop `--query` and filter in PowerShell.
+But once a query needs `['field == \`literal\`]`  drop `--query` and filter in PowerShell.

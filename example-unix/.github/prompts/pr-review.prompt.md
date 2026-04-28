@@ -19,7 +19,7 @@ Then proceed through the phases defined in your agent instructions:
 5. Form findings
 6. Present grouped findings
 7. Use `vscode/askQuestions` for posting decisions or deeper investigation
-8. Post approved findings (with the strict idempotency rules in Phase 6 â€” never post the same finding twice)
+8. Post approved findings (with the strict idempotency rules in Phase 6  never post the same finding twice)
 9. Final summary
 
 If `vscode/askQuestions` is unavailable, fall back to plain text questions for each carousel.
