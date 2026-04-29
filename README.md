@@ -17,75 +17,6 @@ It does **not** edit code, push commits, approve PRs, reject PRs, or change PR s
 
 This project started as a CLI-based adaptation of [`segunak/azure-devops-github-copilot-pr-review`](https://github.com/segunak/azure-devops-github-copilot-pr-review). The main differences are that this version uses the **Azure CLI directly** instead of the Azure DevOps MCP server, and that the generated agent is designed to stay closer to the PR diff so it spends fewer tokens reading unrelated files.
 
-## Why this repo exists
-
-Many teams store code in Azure DevOps but want to use GitHub Copilot’s newer agent features in VS Code. The problem is that GitHub Copilot does not natively know how to review Azure DevOps pull requests, fetch Azure DevOps PR context, or post inline Azure DevOps comments.
-
-This repo solves that by giving you a scaffolding prompt. You copy one prompt into your own repository, run it in Copilot Chat, and it generates the files needed for a custom PR review agent.
-
-The generated agent runs locally in the developer’s VS Code session. It uses the Azure CLI and your existing Azure DevOps login, so there is no shared service account, no PAT stored in the repo, and no extra infrastructure to maintain.
-
-## How it works
-
-```mermaid
-flowchart LR
-    Dev[Developer in VS Code] --> Prompt[Run scaffolding prompt]
-    Prompt --> Files[Generate Copilot agent files]
-    Files --> Agent[PR Review Agent]
-
-    Agent --> ADO[Azure DevOps PR metadata]
-    Agent --> Git[Local git diff]
-    Agent --> Standards[Repo review instructions]
-
-    Agent --> Findings[Grouped review findings]
-    Findings --> Choice[User chooses what to post]
-    Choice --> Comments[Inline ADO PR comments]
-```
-
-At a high level:
-
-1. You add the scaffolding prompt to your repository.
-2. Copilot reads your repo and generates a PR review agent.
-3. The agent uses Azure CLI and git to review PRs.
-4. You approve which findings should be posted.
-5. The agent posts selected findings as inline Azure DevOps PR comments.
-
-
-## Why this version is token-conscious
-
-This version is intentionally designed to reduce unnecessary token usage compared to the MCP-based version it was inspired by.
-
-There are two main reasons:
-
-1. **No MCP layer for Azure DevOps access**  
-   The agent calls `az` and `git` directly from the local terminal instead of going through an Azure DevOps MCP server. That keeps the setup simpler and avoids spending context on an additional tool layer when the local CLI already has the needed information.
-
-2. **Diff-first, targeted code reading**  
-   The agent starts from the PR diff and only reads surrounding code when the diff is not enough to make a good review decision. It does not try to load or summarize the whole repository up front. For example, if a change is self-evident from the diff, it stays there. If a symbol, caller, test, or config dependency needs more context, the agent reads only that targeted range or grep result.
-
-The goal is not just lower token cost. It also makes the review behaviour more predictable: findings should be anchored in the diff or in specific code the agent actually inspected, not in broad assumptions from scanning too much unrelated context.
-
-## What gets generated
-
-The scaffolding prompt creates or updates these files in your repository:
-
-| File | Purpose |
-| --- | --- |
-| `.github/agents/pr-review.agent.md` | The custom Copilot PR review agent. |
-| `.github/instructions/code-review.instructions.md` | Team review standards, seeded from a quick scan of your repo. |
-| `.github/instructions/azure-devops-cli.instructions.md` | Azure DevOps CLI runbook used by the agent. |
-| `.github/prompts/pr-review.prompt.md` | Adds a `/prReview` slash command. |
-| `.github/copilot-instructions.md` | Repository context for GitHub Copilot. Existing content is merged, not overwritten. |
-
-## Choose the prompt for your system
-
-| Your environment | Use this prompt |
-| --- | --- |
-| Windows / PowerShell | `create-pr-review-agent-windows.prompt.md` |
-| macOS / Linux / Unix shell | `create-pr-review-agent-unix.prompt.md` |
-
-The Windows version is PowerShell-specific and includes several guardrails for real Azure CLI and PowerShell quirks.
-
 ## Prerequisites
 
 You need:
@@ -115,7 +46,7 @@ az extension add --name azure-devops
 
 ### 1. Copy the scaffolding prompt into your repository
 
-Pick the prompt for your operating system and copy it into the repository you want to enable PR reviews for:
+Pick the prompt for your operating system (`create-pr-review-agent-windows.prompt.md` for Windows/PowerShell or `create-pr-review-agent-unix.prompt.md` for macOS/Linux) and copy it into the repository you want to enable PR reviews for:
 
 ```text
 .github/prompts/create-pr-review-agent.prompt.md
@@ -170,6 +101,54 @@ git add .github
 git commit -m "Add Azure DevOps PR review Copilot agent"
 git push
 ```
+
+## How it works
+
+```mermaid
+flowchart LR
+    Dev[Developer in VS Code] --> Prompt[Run scaffolding prompt]
+    Prompt --> Files[Generate Copilot agent files]
+    Files --> Agent[PR Review Agent]
+
+    Agent --> ADO[Azure DevOps PR metadata]
+    Agent --> Git[Local git diff]
+    Agent --> Standards[Repo review instructions]
+
+    Agent --> Findings[Grouped review findings]
+    Findings --> Choice[User chooses what to post]
+    Choice --> Comments[Inline ADO PR comments]
+```
+
+At a high level:
+
+1. You add the scaffolding prompt to your repository.
+2. Copilot reads your repo and generates a PR review agent.
+3. The agent uses Azure CLI and git to review PRs.
+4. You approve which findings should be posted.
+5. The agent posts selected findings as inline Azure DevOps PR comments.
+
+
+## What gets generated
+
+The scaffolding prompt creates or updates these files in your repository:
+
+| File | Purpose |
+| --- | --- |
+| `.github/agents/pr-review.agent.md` | The custom Copilot PR review agent. |
+| `.github/instructions/code-review.instructions.md` | Team review standards, seeded from a quick scan of your repo. |
+| `.github/instructions/azure-devops-cli.instructions.md` | Azure DevOps CLI runbook used by the agent. |
+| `.github/prompts/pr-review.prompt.md` | Adds a `/prReview` slash command. |
+| `.github/copilot-instructions.md` | Repository context for GitHub Copilot. Existing content is merged, not overwritten. |
+
+## Choose the prompt for your system
+
+| Your environment | Use this prompt |
+| --- | --- |
+| Windows / PowerShell | `create-pr-review-agent-windows.prompt.md` |
+| macOS / Linux / Unix shell | `create-pr-review-agent-unix.prompt.md` |
+
+The Windows version is PowerShell-specific and includes several guardrails for real Azure CLI and PowerShell quirks.
+
 
 ## Running a PR review
 
@@ -240,38 +219,6 @@ You can customize the generated setup in a few places:
 | Slash command text | `.github/prompts/pr-review.prompt.md` |
 
 The safest customization point is the review standards file. Be more careful when changing the Azure CLI runbook; the commands are intentionally written to avoid known PowerShell, JSON, and Azure CLI edge cases.
-
-## What this is not
-
-This project is not:
-
-- a CI/CD pipeline task,
-- an automatic PR approver,
-- a replacement for human review,
-- a hosted service,
-- an MCP server setup,
-- a bot that pushes fixes to your branch.
-
-It is a local reviewer assistant that helps a developer perform a better first-pass review of Azure DevOps PRs from VS Code.
-
-## Limitations
-
-- Runs locally in VS Code.
-- Requires each developer to have Azure CLI access to the Azure DevOps repo.
-- Only supports Azure DevOps Repos PRs.
-- The quality of the review depends heavily on your repo instructions and the model used by Copilot.
-- It helps reviewers find issues, but the reviewer is still responsible for deciding what matters.
-
-## Repository structure
-
-```text
-create-pr-review-agent-windows.prompt.md   # Scaffolding prompt for Windows / PowerShell
-create-pr-review-agent-unix.prompt.md      # Scaffolding prompt for macOS / Linux / Unix shells
-example-windows/                           # Example generated setup for Windows
-example-unix/                              # Example generated setup for Unix shells
-README.md                                  # This file
-LICENSE                                    # MIT license
-```
 
 ## Credits
 
