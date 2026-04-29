@@ -54,7 +54,7 @@ Run from PowerShell:
 ```powershell
 az --version | Select-Object -First 1
 az account show --query user.name -o tsv 2>$null
-az extension list --query "['name=='azure-devops'].name" -o tsv 2>$null
+az extension list --query "[?name=='azure-devops'].name" -o tsv 2>$null
 ```
 
 
@@ -86,10 +86,8 @@ Files to write follow. Each file's target path is the heading; its contents are 
 ``markdown
 ---
 name: pr-review
-description: Review an Azure DevOps pull request against the team's coding standards. Posts inline comments after explicit approval. Uses Azure CLI from PowerShell.
-tools: ['vscode/askQuestions']
+description: Review an Azure DevOps pull request against the team's coding standards. Posts inline comments after explicit approval. Uses Azure CLI from PowerShell. 
 ---
-
 <!--
 Team Configuration  populated by the scaffolding prompt.
 
@@ -136,7 +134,7 @@ Run from PowerShell:
 ```powershell
 az --version | Select-Object -First 1
 az account show --query user.name -o tsv
-az extension list --query "['name=='azure-devops'].name" -o tsv
+az extension list --query "[?name=='azure-devops'].name" -o tsv
 ```
 
 If any fails, stop and instruct the user:
@@ -162,40 +160,99 @@ Step 3  Also check for non-`.md` AI config that signals conventions (don't deepl
 
 Step 4  Read **only** the filtered candidates. If a candidate turns out to be irrelevant, stop reading it and move on.
 
-Step 5  Briefly summarize what you found before moving on.
+Step 5  **Note the repo's languages and file extensions** for later use in Phase 4b. A quick way:
+
+```powershell
+# Top file extensions in the repo by count - tells you what to grep against later.
+git ls-files | ForEach-Object { [System.IO.Path]::GetExtension($_) } |
+  Where-Object { $_ } | Group-Object -NoElement |
+  Sort-Object Count -Descending | Select-Object -First 10
+```
+
+Record the dominant extensions (e.g. `.ts`, `.cs`, `.py`) and the test-file naming convention you can infer from the listing. Phase 4b will use these when running `git grep` and `git show`.
+
+Step 6  Briefly summarize what you found before moving on.
 
 ## Phase 3 - Gather PR Context
 
 Use the recipes in `.github/instructions/azure-devops-cli.instructions.md` to:
 
 1. Fetch PR meta (title, description, source/target refs, source/target commit SHAs, draft flag).
-2. `git fetch origin <source-branch> <target-branch>` then `git diff <target-commit>...<source-commit>`. **This is the only diff method.** Do not use the REST diff endpoint.
-3. List linked work items (titles + state + description) to understand intent.
+2. Infer the work item reference from the PR title or branch name when present (for example `PLAT-44`). Do not query linked work items through Azure CLI. Treat work-item intent as unavailable unless it is explicit in the PR title, branch name, or description.
+3. `git fetch origin <source-branch> <target-branch>` then `git diff <target-commit>...<source-commit>`. **This is the only diff method.** Do not use the REST diff endpoint.
 4. List existing comment threads on the PR  both for context and for the duplicate-prevention rule in Phase 6.
 
 Persist the existing-threads list and the source/target commit SHAs in your working memory.
 
-## Phase 4 - Read Surrounding Code
+## Phase 4 - Triage and Targeted Reads
 
-For each changed file, the diff alone is rarely enough. **Read the file at the PR's source commit, not at the user's working-tree HEAD**  the user is probably on a different branch and their local copy of the file may differ from the PR.
+Do **not** read full files up front. Start from the diff alone, reason about each change, then fetch only what's actually needed for the cases that need more context. This phase has three sub-steps. Run them silently — do not print a triage table to the user.
 
-Use this pattern:
+### Phase 4a - Triage from the diff alone
+
+Walk every change in the diff. For each, classify it internally as one of:
+
+- **self-evident** — the change is understandable from the hunk plus its immediate context lines. No extra reads needed. Examples: typo fix, dead-code removal, version bump, doc tweak, log message change, simple null check, adding an obvious validation.
+- **needs-context** — the diff hunk references something off-screen that you must see to judge correctness. Triggers (any one is enough):
+  - Calls a function/method whose definition is not in the hunk
+  - Changes a function signature (callers might break)
+  - Modifies a shared type, interface, or schema
+  - Touches auth, validation, parsing, or a known security-sensitive path
+  - Removes or renames code (must verify nothing depends on what's gone)
+  - Changes test assertions or test setup
+  - Adds or modifies error handling at a boundary
+  - Modifies a config key, env var, or feature flag used elsewhere
+- **uncertain** — the change might be fine or might be wrong; can't tell from the hunk. Treat the same as needs-context.
+
+Default to **self-evident** when nothing in the trigger list applies. Don't go fishing.
+
+### Phase 4b - Targeted reads (only for needs-context / uncertain)
+
+Read the **minimum** to resolve each open question. Prefer ranges and grep over full file reads.
+
+Adapt all file globs and symbol patterns below to the **languages and conventions actually used in this repo** (which you noted in Phase 2). The examples are illustrative — the file extensions, import keywords, function-definition syntax, and test-naming conventions all vary by language. Don't paste the examples literally if the repo isn't TypeScript.
 
 ```powershell
-# Read the entire file at the PR's source commit:
-git show "$($srcSha):path/to/file.ts"
+# Read a range, not the whole file. Default window: ~30 lines around the change.
+# Use the actual file path and extension from the diff.
+git show "$($srcSha):path/to/changed/file.ext" | Select-Object -Index (40..80)
 
-# Or just a specific range:
-git show "$($srcSha):path/to/file.ts" | Select-Object -Index (40..80)
+# Find callers/usages of a symbol across the source commit.
+# Pick the file glob from the languages present in this repo.
+# Examples by stack:
+#   TS/JS  →  -- '*.ts' '*.tsx' '*.js' '*.jsx'
+#   Python →  -- '*.py'
+#   C#     →  -- '*.cs'
+#   Go     →  -- '*.go'
+#   Java   →  -- '*.java'
+#   Mixed  →  list every relevant extension, or omit the pathspec to search everything
+git --no-pager grep -n "<symbol-name>(" "$srcSha" -- <repo-appropriate-globs>
+
+# Find a definition. Patterns vary by language — adapt to what the repo uses:
+#   TS/JS    →  "function <name>\|export const <name>\|<name> ="
+#   Python   →  "def <name>\|class <name>"
+#   C#       →  "<name>\s*("
+#   Go       →  "func <name>\|func .*\<name>"
+#   Java/C#  →  "<name>\s*("
+git --no-pager grep -n "<language-appropriate pattern>" "$srcSha"
+
+# If a referenced file exists only on the target branch (e.g. removed in this PR):
+git show "$($tgtSha):path/to/file.ext" | Select-Object -Index (40..80)
 ```
 
-When to read what:
+Rules:
 
-- **Changed files**  read the full file at `$srcSha`. The diff shows what changed; the full file shows context the diff doesn't.
-- **Callers / related modules**  read at `$srcSha` if they exist on the PR branch. If a file you need only exists on `main`, read at `$tgtSha`.
-- **Pattern searches** ("is this pattern used elsewhere'")  Copilot's local `search` is fine here, since pattern presence in the user's checkout is a reasonable proxy for repo conventions.
+- **Match the repo, not the example.** If Phase 2 found Python and Bicep, your greps and globs use `*.py` and `*.bicep`. If it found a polyglot repo, list all relevant extensions.
+- A 30-line window around a definition is almost always enough. Read the full file only if the symbol's behaviour clearly depends on module-wide state.
+- Use `git grep` against `$srcSha` for caller/usage lookups. **Do not** read each potential caller file in full to find usages.
+- Do not read tests in full unless the finding is about the tests themselves. A grep against the test directory (using whatever naming convention the repo follows — `*.test.ts`, `*_test.py`, `*Tests.cs`, etc.) tells you whether something is covered.
+- Stop reading as soon as the open question is resolved. You're not building a model of the codebase, you're answering a specific question.
 
-A finding without surrounding context is usually wrong. Don't skip this phase.
+### Phase 4c - Reason
+
+Now reason about each change with the context you have. **Every finding must be anchored in either the diff itself or something you actually read in Phase 4b.** No speculation. If you're tempted to make a finding but realise the supporting context isn't in either place, either go back to Phase 4b for one more targeted read or drop the finding.
+
+The actual finding format and categorisation comes in the next phase.
 
 ## Phase 5 - Form Findings
 
@@ -206,7 +263,7 @@ Categories (adapt to the stack you observed in Phase 2 and the PR itself):
 3. **Performance**  N+1, hot-path allocations, missing indexes, blocking I/O.
 4. **Maintainability**  naming, duplication, dead code, missing tests, leaky abstractions.
 5. **Standards compliance**  anything in the files you read in Phase 2 that the diff violates.
-6. **Linked work item alignment**  does the change actually do what the work item asks'
+6. **PR intent alignment**  does the change match the PR title, branch name, and description. Do not require linked work-item data.
 
 Each finding has:
 - **Severity**: blocker | major | minor | nit
@@ -324,7 +381,7 @@ That's it. The agent's job is done. The user implements fixes themselves  this a
 
 ``
 
-### `.github/instructions/code-review.instructions.md`### `.github/instructions/code-review.instructions.md`
+### `.github/instructions/code-review.instructions.md`
 ````markdown
 ---
 applyTo: '**'
@@ -423,7 +480,7 @@ az extension add --name azure-devops
 ```powershell
 az --version | Select-Object -First 1
 az account show --query user.name -o tsv          # fails if not logged in
-az extension list --query "['name=='azure-devops'].name" -o tsv   # empty if extension missing
+az extension list --query "[?name=='azure-devops'].name" -o tsv   # empty if extension missing
 ```
 
 If `az.cmd` is on PATH but `az` isn't, `az` still works because PowerShell resolves `.cmd` automatically. No special handling needed.
@@ -481,18 +538,6 @@ git diff "$tgtSha...$srcSha"
 ```
 
 The three-dot syntax shows changes on the source branch since it diverged from target  exactly what reviewers need. **Do not use `--query-parameters` against the `git/diffs` REST endpoint;** it's slower, has a smaller output limit, and offers nothing local git doesn't.
-
----
-
-## Get linked work items
-
-```powershell
-$wiIds = az repos pr work-item list --id $pr --org "__ORG_URL__" --output tsv --query '[].id'
-foreach ($wid in $wiIds) {
-  az boards work-item show --id $wid --org "__ORG_URL__" --output json `
-    --query '{id:id, title:fields."System.Title", type:fields."System.WorkItemType", state:fields."System.State"}'
-}
-```
 
 ---
 
@@ -678,7 +723,7 @@ If `vscode/askQuestions` is unavailable, fall back to plain text questions for e
 
 ``
 
-### `.github/copilot-instructions.md`### `.github/copilot-instructions.md`
+### `.github/copilot-instructions.md`
 ````markdown
 # Repository Context for GitHub Copilot
 
@@ -686,7 +731,6 @@ This repository uses Azure DevOps for source control and pull requests.
 
 For PR review and fix tasks, this repo provides custom agents:
 - **pr-review**  review an Azure DevOps PR and post inline comments. Invoke via the agents dropdown or `/prReview`.
-- **pr-fix**  implement review findings on a worktree of the PR branch. Reachable as a handoff from pr-review.
 
 Both agents drive the **Azure CLI (`az`)** directly. There is no MCP server and no wrapper scripts. All recipes  auth, listing PRs, fetching diffs, posting comments  live in `.github/instructions/azure-devops-cli.instructions.md` and are auto-applied to every chat in this workspace.
 
@@ -698,5 +742,6 @@ Team coding standards live in `.github/instructions/`. The PR Review agent is re
 - **Never overwrite existing instruction files or the existing `copilot-instructions.md` content.** Always merge.
 - **Never write secrets or PATs into any file.** Auth is by `az login`.
 - **Never create `.vscode/mcp.json`**  this setup is CLI-driven, no MCP server.
+- **Never query linked work items through Azure CLI.** Work-item links are often missing or unreliable; infer intent only from PR title, branch name, and description.
 - **Don't add anything to `.gitignore`.** All scaffolded files are intended to be committed.
 - **If git remote isn't ADO**, stop and tell the user this scaffold is ADO-only.
